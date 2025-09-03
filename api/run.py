@@ -1,26 +1,18 @@
 # api/run.py
 import json
-import os
-import logging
-from http import HTTPStatus
-from ..pipeline import run_for_all_clients
+from http.server import BaseHTTPRequestHandler
+from pipeline import run_for_all_clients
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            result = run_for_all_clients()
+            body = json.dumps({"ok": True, "result": result})
+            self.send_response(200)
+        except Exception as e:
+            body = json.dumps({"ok": False, "error": str(e)})
+            self.send_response(500)
 
-def handler(request):
-    try:
-        result = run_for_all_clients()
-        return {
-            "statusCode": HTTPStatus.OK,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"ok": True, "result": result})
-        }
-    except Exception as e:
-        logging.exception("Pipeline failed")
-        return {
-            "statusCode": HTTPStatus.INTERNAL_SERVER_ERROR,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"ok": False, "error": str(e)})
-        }
-
-# Vercel Python runtime expects a default export named 'handler'
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(body.encode('utf-8'))

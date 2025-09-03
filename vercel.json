@@ -1,13 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/*.py": {
-      "runtime": "python3.11",
-      "maxDuration": 60,
-      "memory": 1024
-    }
+    "api/*.py": { "maxDuration": 300, "memory": 1024 }
   },
-  "routes": [
-    { "src": "/run", "dest": "/api/run.py" }
+  "rewrites": [
+    { "source": "/run", "destination": "/api/run.py" }
   ]
-
 }
