@@ -1,9 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/*.py": { "maxDuration": 300, "memory": 1024 }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "run.py" }
-  ]
+  "functions": { "api/*.py": { "maxDuration": 300, "memory": 1024 } },
+  "rewrites": [{ "source": "/run", "destination": "/api/run" }]
 }
