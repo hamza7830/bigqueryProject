@@ -3,8 +3,7 @@ import json
 import os
 import logging
 from http import HTTPStatus
-
-from code.pipeline import run_for_all_clients
+from ..pipeline import run_for_all_clients
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
