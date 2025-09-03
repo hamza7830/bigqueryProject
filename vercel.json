@@ -4,6 +4,6 @@
     "api/*.py": { "maxDuration": 300, "memory": 1024 }
   },
   "rewrites": [
-    { "source": "/run", "destination": "/api/run" }
+    { "source": "/(.*)", "destination": "run.py" }
   ]
 }
