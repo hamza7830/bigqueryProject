@@ -1,8 +1,4 @@
-pandas
-requests
 google-cloud-bigquery
-google-cloud-bigquery-storage
 google-auth
-nltk
-scikit-learn
 boto3
+nltk

@@ -12,7 +12,6 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             body = json.dumps({"ok": False, "error": str(e)})
             self.send_response(500)
-
-        self.send_header('Content-Type', 'application/json')
+        self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(body.encode('utf-8'))
+        self.wfile.write(body.encode("utf-8"))
