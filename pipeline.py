@@ -1,6 +1,5 @@
-
 # pipeline.py
-import os, json, logging, io
+import os, json, base64, logging, io
 from datetime import date, timedelta
 
 import boto3
@@ -23,19 +22,38 @@ DEFAULT_DESTINATIONS = [
     'canada','usa','cook islands','fiji','tahiti','bora bora'
 ]
 
-def last_monday_str() -> str:
-    today = date.today()
-    monday = today if today.weekday() == 0 else today - timedelta(days=today.weekday())
-    return monday.strftime("%Y-%m-%d")
+def _load_service_account_info():
+    """Accepts either plain JSON or base64 in GCP_SERVICE_ACCOUNT_JSON or GCP_SERVICE_ACCOUNT_JSON_B64."""
+    raw = (os.getenv("GCP_SERVICE_ACCOUNT_JSON") or "").strip()
+    b64 = (os.getenv("GCP_SERVICE_ACCOUNT_JSON_B64") or "").strip()
+
+    if b64:
+        try:
+            decoded = base64.b64decode(b64).decode("utf-8").strip()
+            return json.loads(decoded)
+        except Exception as e:
+            raise RuntimeError(f"GCP_SERVICE_ACCOUNT_JSON_B64 invalid: {e}")
+
+    if raw:
+        try:
+            # raw JSON?
+            if raw.lstrip().startswith("{"):
+                return json.loads(raw)
+            # base64 pasted into the RAW var?
+            decoded = base64.b64decode(raw).decode("utf-8").strip()
+            return json.loads(decoded)
+        except Exception as e:
+            raise RuntimeError(f"GCP_SERVICE_ACCOUNT_JSON invalid (neither JSON nor base64 JSON): {e}")
+
+    raise RuntimeError("Missing service account: set GCP_SERVICE_ACCOUNT_JSON (JSON or base64) or GCP_SERVICE_ACCOUNT_JSON_B64")
 
 def get_bq_client(project: str) -> bigquery.Client:
-    sa_raw = os.getenv("GCP_SERVICE_ACCOUNT_JSON")
-    if not sa_raw:
-        raise RuntimeError("Missing env var GCP_SERVICE_ACCOUNT_JSON")
-    creds = service_account.Credentials.from_service_account_info(json.loads(sa_raw))
+    info = _load_service_account_info()
+    creds = service_account.Credentials.from_service_account_info(info)
     return bigquery.Client(project=project, credentials=creds)
 
 def s3_load_keywords(bucket: str, client_dataset: str):
+    """Optional context file: s3://{bucket}/brand-sentiment/{client_dataset}_keywords.txt"""
     key = f"brand-sentiment/{client_dataset}_keywords.txt"
     aws_access, aws_secret = os.getenv("AWS_ACCESS_KEY_ID"), os.getenv("AWS_SECRET_ACCESS_KEY")
     aws_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -56,6 +74,11 @@ def s3_load_keywords(bucket: str, client_dataset: str):
     except Exception:
         logging.info(f"[{client_dataset}] No context keyword file at s3://{bucket}/{key}; continuing without it.")
         return []
+
+def last_monday_str() -> str:
+    today = date.today()
+    monday = today if today.weekday() == 0 else today - timedelta(days=today.weekday())
+    return monday.strftime("%Y-%m-%d")
 
 def fetch_queries(bq: bigquery.Client, project: str, dataset: str):
     sql = f"SELECT DISTINCT query FROM `{project}.{dataset}.google_search_console_web_url_query`"
@@ -128,13 +151,28 @@ def run_client(conf: dict):
     return {"dataset": dataset, "rows": len(rows), "ok": True}
 
 def load_clients():
-    raw = os.getenv("CLIENTS_JSON", "").strip()
+    raw = (os.getenv("CLIENTS_JSON") or "").strip()
     if raw:
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except Exception as e:
+            # allow base64 here too if someone pasted it
+            try:
+                dec = base64.b64decode(raw).decode("utf-8")
+                data = json.loads(dec)
+            except Exception as e2:
+                raise RuntimeError(f"CLIENTS_JSON invalid (neither JSON nor base64 JSON): {e} / {e2}")
+
         if not isinstance(data, list):
-            raise RuntimeError("CLIENTS_JSON must be a JSON array")
+            raise RuntimeError("CLIENTS_JSON must be a JSON array of client objects")
+
+        for i, c in enumerate(data):
+            for k in ("WEBSITE_BIGQUERY_ID", "BIGQUERY_PROJECT", "S3_BUCKET"):
+                if k not in c or not c[k]:
+                    raise RuntimeError(f"CLIENTS_JSON[{i}] missing '{k}'")
         return data
-    # default single client if env not provided
+
+    # fallback single client
     return [{
         "WEBSITE_BIGQUERY_ID": "turquoiseholidays_co_uk",
         "BIGQUERY_PROJECT": "ems-codex-test",
