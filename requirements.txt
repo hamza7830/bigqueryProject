@@ -1,4 +1,0 @@
-google-cloud-bigquery
-google-auth
-boto3
-vaderSentiment
