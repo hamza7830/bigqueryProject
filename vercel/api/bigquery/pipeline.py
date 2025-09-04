@@ -4,7 +4,8 @@ import io
 import json
 import gzip
 import logging
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+import uuid
 
 import boto3
 from google.cloud import bigquery
@@ -14,40 +15,31 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ===== Runtime configuration via ENV =====
-# BigQuery project (required)
 BIGQUERY_PROJECT = os.getenv("BIGQUERY_PROJECT", "").strip()
 if not BIGQUERY_PROJECT:
     logging.warning("ENV BIGQUERY_PROJECT is not set. You must set it in Vercel.")
 
-# Optional: context keywords .txt bucket (per-client plain text list)
 S3_CONTEXT_BUCKET = os.getenv("S3_CONTEXT_BUCKET", "ems-codex-standard-test").strip()
-
-# Required: negatives gz JSON bucket (where negatives.json.gz lives)
 S3_NEGATIVES_BUCKET = os.getenv("S3_NEGATIVES_BUCKET", "ems-codex-versioned").strip()
 
-# Service account: prefer JSON/B64 via env for Vercel; optionally support path for local
 SERVICE_ACCOUNT_JSON = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "").strip()
 SERVICE_ACCOUNT_JSON_B64 = os.getenv("GCP_SERVICE_ACCOUNT_JSON_B64", "").strip()
 SERVICE_ACCOUNT_JSON_PATH = os.getenv("SERVICE_ACCOUNT_JSON_PATH", "").strip()
-
 # ========================================
 
+
 def _load_service_account_info():
-    # Prefer explicit base64 env
     if SERVICE_ACCOUNT_JSON_B64:
         import base64
         dec = base64.b64decode(SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
         return json.loads(dec)
-    # Raw JSON env
     if SERVICE_ACCOUNT_JSON:
-        # allow either JSON or base64 accidentally pasted here
         if SERVICE_ACCOUNT_JSON.lstrip().startswith("{"):
             return json.loads(SERVICE_ACCOUNT_JSON)
         else:
             import base64
             dec = base64.b64decode(SERVICE_ACCOUNT_JSON).decode("utf-8")
             return json.loads(dec)
-    # Path (OK for local runs; not recommended on Vercel)
     if SERVICE_ACCOUNT_JSON_PATH:
         if not os.path.exists(SERVICE_ACCOUNT_JSON_PATH):
             raise FileNotFoundError(f"Service account JSON not found: {SERVICE_ACCOUNT_JSON_PATH}")
@@ -56,10 +48,12 @@ def _load_service_account_info():
         return json.loads(creds.to_json())
     raise RuntimeError("Missing GCP creds: set GCP_SERVICE_ACCOUNT_JSON_B64 or GCP_SERVICE_ACCOUNT_JSON (or SERVICE_ACCOUNT_JSON_PATH for local)")
 
+
 def get_bq_client(project: str) -> bigquery.Client:
     info = _load_service_account_info()
     creds = service_account.Credentials.from_service_account_info(info)
     return bigquery.Client(project=project, credentials=creds)
+
 
 def fetch_queries(bq: bigquery.Client, project: str, dataset: str):
     sql = f"SELECT DISTINCT query FROM `{project}.{dataset}.google_search_console_web_url_query`"
@@ -72,31 +66,86 @@ def fetch_queries(bq: bigquery.Client, project: str, dataset: str):
         logging.error(f"[{dataset}] BigQuery fetch failed: {e}")
         return []
 
-def load_json_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: str, table: str):
+
+# ---------- Upsert with inserted_at / updated_at ----------
+def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: str, table: str):
     table_id = f"{project}.{dataset}.{table}"
+    staging_table = f"_staging_{table}_{uuid.uuid4().hex[:8]}"
+    staging_table_id = f"{project}.{dataset}.{staging_table}"
+
+    schema = [
+        bigquery.SchemaField("query", "STRING"),
+        bigquery.SchemaField("Sentiment_Score", "FLOAT"),
+        bigquery.SchemaField("Sentiment_Category", "STRING"),
+        bigquery.SchemaField("MONDAY", "DATE"),
+        bigquery.SchemaField("inserted_at", "TIMESTAMP"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP"),
+    ]
     try:
         bq.get_table(table_id)
-        logging.info(f"[{dataset}] Table exists: {table_id}; overwriting")
     except Exception:
-        logging.info(f"[{dataset}] Table missing: {table_id}; will be created on load")
+        table_obj = bigquery.Table(table_id, schema=schema)
+        bq.create_table(table_obj)
+
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    staged_rows = []
+    for r in rows:
+        staged_rows.append({
+            "query": r["query"],
+            "Sentiment_Score": r["Sentiment_Score"],
+            "Sentiment_Category": r["Sentiment_Category"],
+            "MONDAY": r["MONDAY"],
+            "inserted_at": now_str,
+            "updated_at": now_str
+        })
 
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition="WRITE_TRUNCATE",
         autodetect=True,
     )
-    ndjson = ("\n".join(json.dumps(r, separators=(",", ":")) for r in rows)).encode("utf-8")
-    job = bq.load_table_from_file(file_obj=io.BytesIO(ndjson), destination=table_id, job_config=job_config)
-    job.result()
-    logging.info(f"[{dataset}] Uploaded {len(rows)} rows to {table_id}")
+    ndjson = ("\n".join(json.dumps(x, separators=(",", ":")) for x in staged_rows)).encode("utf-8")
+    load_job = bq.load_table_from_file(
+        file_obj=io.BytesIO(ndjson),
+        destination=staging_table_id,
+        job_config=job_config
+    )
+    load_job.result()
+
+    merge_sql = f"""
+    MERGE `{table_id}` T
+    USING `{staging_table_id}` S
+    ON T.query = S.query
+    WHEN MATCHED AND (
+         SAFE_CAST(T.Sentiment_Score AS FLOAT64) != SAFE_CAST(S.Sentiment_Score AS FLOAT64)
+      OR T.Sentiment_Category != S.Sentiment_Category
+      OR T.MONDAY != S.MONDAY
+    )
+    THEN UPDATE SET
+      T.Sentiment_Score   = S.Sentiment_Score,
+      T.Sentiment_Category= S.Sentiment_Category,
+      T.MONDAY            = S.MONDAY,
+      T.updated_at        = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN
+    INSERT (query, Sentiment_Score, Sentiment_Category, MONDAY, inserted_at, updated_at)
+    VALUES (S.query, S.Sentiment_Score, S.Sentiment_Category, S.MONDAY, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());
+    """
+    bq.query(merge_sql).result()
+
+    try:
+        bq.delete_table(staging_table_id, not_found_ok=True)
+    except Exception:
+        pass
+
+    logging.info(f"[{dataset}] Upserted {len(rows)} rows into {table_id}")
+
 
 # ---------- S3 helpers ----------
 def _s3():
-    # Uses AWS creds from env or attached role. Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION in Vercel.
     return boto3.client("s3")
 
+
 def s3_load_context_keywords(bucket: str, dataset: str):
-    """Optional plain-text context file at s3://{bucket}/brand-sentiment/{dataset}_keywords.txt"""
     key = f"brand-sentiment/{dataset}_keywords.txt"
     try:
         obj = _s3().get_object(Bucket=bucket, Key=key)
@@ -108,15 +157,8 @@ def s3_load_context_keywords(bucket: str, dataset: str):
         logging.info(f"[{dataset}] No context keywords at s3://{bucket}/{key} ({e})")
         return []
 
-def s3_load_negative_keywords(dataset: str):
-    """
-    REQUIRED negatives file (if absent, we proceed without forcing negatives):
-      s3://{S3_NEGATIVES_BUCKET}/sentiment/development/{dataset}/negatives.json.gz
 
-    JSON may be:
-      - list of strings
-      - or {"keywords": [...]}
-    """
+def s3_load_negative_keywords(dataset: str):
     bucket = S3_NEGATIVES_BUCKET
     key = f"sentiment/development/{dataset}/negatives.json.gz"
     try:
@@ -135,6 +177,7 @@ def s3_load_negative_keywords(dataset: str):
         logging.info(f"[{dataset}] No negatives at s3://{bucket}/{key} ({e}); proceeding without negatives.")
         return []
 
+
 # ---------- Sentiment ----------
 EXCLUSION_BASE = ['beach','restaurant','hotel','museum','park','bitter end','kia ora','lonely planet','yacht']
 DEFAULT_DESTINATIONS = [
@@ -149,10 +192,12 @@ DEFAULT_DESTINATIONS = [
     'usa','cook islands','fiji','tahiti','bora bora'
 ]
 
+
 def last_monday_str() -> str:
     today = date.today()
     monday = today if today.weekday() == 0 else today - timedelta(days=today.weekday())
     return monday.strftime("%Y-%m-%d")
+
 
 def analyze_sentiment(queries, destinations, exclusions, ctx_keywords, negative_keywords):
     sia = SentimentIntensityAnalyzer()
@@ -162,7 +207,6 @@ def analyze_sentiment(queries, destinations, exclusions, ctx_keywords, negative_
 
     def score(q: str) -> float:
         t = q.lower()
-        # special case from your earlier logic
         if 'st lucia' in t and not any(kw in t for kw in negs):
             return 0.0
         if any(ex in t for ex in excl):
@@ -177,8 +221,14 @@ def analyze_sentiment(queries, destinations, exclusions, ctx_keywords, negative_
     for q in queries:
         s = score(q)
         cat = "positive" if s > 0.3 else "negative" if s < -0.3 else "neutral"
-        out.append({"query": q, "Sentiment_Score": float(s), "Sentiment_Category": cat, "MONDAY": monday})
+        out.append({
+            "query": q,
+            "Sentiment_Score": float(s),
+            "Sentiment_Category": cat,
+            "MONDAY": monday
+        })
     return out
+
 
 # ---------- Orchestration ----------
 def run_one(dataset: str):
@@ -192,11 +242,12 @@ def run_one(dataset: str):
         return {"dataset": dataset, "rows": 0, "note": "no queries"}
 
     ctx = s3_load_context_keywords(S3_CONTEXT_BUCKET, dataset)
-    negs = s3_load_negative_keywords(dataset)  # no defaults; if missing, proceed with empty
+    negs = s3_load_negative_keywords(dataset)
 
     rows = analyze_sentiment(queries, DEFAULT_DESTINATIONS, EXCLUSION_BASE, ctx, negs)
-    load_json_to_bq(bq, rows, BIGQUERY_PROJECT, dataset, "test_table")
+    upsert_rows_to_bq(bq, rows, BIGQUERY_PROJECT, dataset, "test_table")
     return {"dataset": dataset, "rows": len(rows), "ok": True}
+
 
 def run_for_datasets(datasets):
     results = []
