@@ -13,8 +13,6 @@
 		"config": {
 			"runtime": "python3.9",
 			"includeFiles": [
-			"_app/**",
-			"_helper/**",
 			"vercel/api/biqquery/pipeline.py"
 			]
 		}
