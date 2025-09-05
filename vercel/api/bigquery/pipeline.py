@@ -67,26 +67,45 @@ def fetch_queries(bq: bigquery.Client, project: str, dataset: str):
         return []
 
 
+# ---------- schema management ----------
+REQUIRED_COLUMNS = [
+    ("query", "STRING"),
+    ("Sentiment_Score", "FLOAT"),
+    ("Sentiment_Category", "STRING"),
+    ("MONDAY", "DATE"),
+    ("inserted_at", "TIMESTAMP"),
+    ("updated_at", "TIMESTAMP"),
+]
+
+def ensure_table_schema(bq: bigquery.Client, table_id: str):
+    """
+    Ensure table exists and has all required columns; add missing columns if needed.
+    """
+    from google.cloud.exceptions import NotFound
+
+    try:
+        table = bq.get_table(table_id)
+        existing = {c.name.lower(): c for c in table.schema}
+        to_add = [col for col in REQUIRED_COLUMNS if col[0].lower() not in existing]
+        for name, typ in to_add:
+            logging.info(f"Adding missing column {name} {typ} to {table_id}")
+            bq.query(f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS {name} {typ}").result()
+    except NotFound:
+        logging.info(f"Creating table {table_id} with full schema")
+        schema = [bigquery.SchemaField(n, t) for (n, t) in REQUIRED_COLUMNS]
+        bq.create_table(bigquery.Table(table_id, schema=schema))
+
+
 # ---------- Upsert with inserted_at / updated_at ----------
 def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: str, table: str):
     table_id = f"{project}.{dataset}.{table}"
     staging_table = f"_staging_{table}_{uuid.uuid4().hex[:8]}"
     staging_table_id = f"{project}.{dataset}.{staging_table}"
 
-    schema = [
-        bigquery.SchemaField("query", "STRING"),
-        bigquery.SchemaField("Sentiment_Score", "FLOAT"),
-        bigquery.SchemaField("Sentiment_Category", "STRING"),
-        bigquery.SchemaField("MONDAY", "DATE"),
-        bigquery.SchemaField("inserted_at", "TIMESTAMP"),
-        bigquery.SchemaField("updated_at", "TIMESTAMP"),
-    ]
-    try:
-        bq.get_table(table_id)
-    except Exception:
-        table_obj = bigquery.Table(table_id, schema=schema)
-        bq.create_table(table_obj)
+    # Ensure target table exists and has the needed columns
+    ensure_table_schema(bq, table_id)
 
+    # Prepare staging payload (timestamps added client-side for visibility; source-of-truth set in MERGE)
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     staged_rows = []
     for r in rows:
@@ -99,6 +118,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
             "updated_at": now_str
         })
 
+    # Load to ephemeral staging
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition="WRITE_TRUNCATE",
@@ -112,6 +132,8 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     )
     load_job.result()
 
+    # IMPORTANT: Only update updated_at if sentiment fields changed.
+    # We DO NOT update MONDAY to avoid flipping updated_at just because the week changed.
     merge_sql = f"""
     MERGE `{table_id}` T
     USING `{staging_table_id}` S
@@ -119,19 +141,18 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     WHEN MATCHED AND (
          SAFE_CAST(T.Sentiment_Score AS FLOAT64) != SAFE_CAST(S.Sentiment_Score AS FLOAT64)
       OR T.Sentiment_Category != S.Sentiment_Category
-      OR T.MONDAY != S.MONDAY
     )
     THEN UPDATE SET
-      T.Sentiment_Score   = S.Sentiment_Score,
-      T.Sentiment_Category= S.Sentiment_Category,
-      T.MONDAY            = S.MONDAY,
-      T.updated_at        = CURRENT_TIMESTAMP()
+      T.Sentiment_Score    = S.Sentiment_Score,
+      T.Sentiment_Category = S.Sentiment_Category,
+      T.updated_at         = CURRENT_TIMESTAMP()
     WHEN NOT MATCHED THEN
     INSERT (query, Sentiment_Score, Sentiment_Category, MONDAY, inserted_at, updated_at)
     VALUES (S.query, S.Sentiment_Score, S.Sentiment_Category, S.MONDAY, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());
     """
     bq.query(merge_sql).result()
 
+    # Drop staging
     try:
         bq.delete_table(staging_table_id, not_found_ok=True)
     except Exception:
@@ -142,6 +163,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
 
 # ---------- S3 helpers ----------
 def _s3():
+    # Uses AWS creds from env or attached role
     return boto3.client("s3")
 
 
@@ -207,6 +229,7 @@ def analyze_sentiment(queries, destinations, exclusions, ctx_keywords, negative_
 
     def score(q: str) -> float:
         t = q.lower()
+        # Keep your special case
         if 'st lucia' in t and not any(kw in t for kw in negs):
             return 0.0
         if any(ex in t for ex in excl):
