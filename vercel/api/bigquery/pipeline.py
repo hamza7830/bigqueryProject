@@ -80,16 +80,35 @@ REQUIRED_COLUMNS = [
 def ensure_table_schema(bq: bigquery.Client, table_id: str):
     """
     Ensure table exists and has all required columns; add missing columns if needed.
+    Raises if after ALTERs the required columns still aren't present.
     """
     from google.cloud.exceptions import NotFound
 
+    def _columns(cur_table_id: str):
+        res = bq.query(
+            f"""
+            SELECT LOWER(column_name) AS col
+            FROM `{cur_table_id.rsplit('.', 1)[0]}.INFORMATION_SCHEMA.COLUMNS`
+            WHERE table_name = '{cur_table_id.split('.')[-1]}'
+            """
+        ).result()
+        return {row.col for row in res}
+
     try:
-        table = bq.get_table(table_id)
-        existing = {c.name.lower(): c for c in table.schema}
-        to_add = [col for col in REQUIRED_COLUMNS if col[0].lower() not in existing]
-        for name, typ in to_add:
-            logging.info(f"Adding missing column {name} {typ} to {table_id}")
-            bq.query(f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS {name} {typ}").result()
+        bq.get_table(table_id)
+        existing = _columns(table_id)
+        missing = [name for name, _ in REQUIRED_COLUMNS if name.lower() not in existing]
+        for name, typ in REQUIRED_COLUMNS:
+            if name.lower() in existing:
+                continue
+            q = f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS {name} {typ}"
+            logging.info(f"ALTER: {q}")
+            bq.query(q).result()
+        # verify
+        existing2 = _columns(table_id)
+        still_missing = [name for name, _ in REQUIRED_COLUMNS if name.lower() not in existing2]
+        if still_missing:
+            raise RuntimeError(f"{table_id}: columns still missing after ALTER: {still_missing}")
     except NotFound:
         logging.info(f"Creating table {table_id} with full schema")
         schema = [bigquery.SchemaField(n, t) for (n, t) in REQUIRED_COLUMNS]
@@ -105,7 +124,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     # Ensure target table exists and has the needed columns
     ensure_table_schema(bq, table_id)
 
-    # Prepare staging payload (timestamps added client-side for visibility; source-of-truth set in MERGE)
+    # Prepare staging payload (timestamps included for visibility; truth is set by MERGE)
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     staged_rows = []
     for r in rows:
@@ -113,7 +132,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
             "query": r["query"],
             "Sentiment_Score": r["Sentiment_Score"],
             "Sentiment_Category": r["Sentiment_Category"],
-            "MONDAY": r["MONDAY"],
+            "MONDAY": r["MONDAY"],  # string YYYY-MM-DD; cast in MERGE
             "inserted_at": now_str,
             "updated_at": now_str
         })
@@ -132,8 +151,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     )
     load_job.result()
 
-    # IMPORTANT: Only update updated_at if sentiment fields changed.
-    # We DO NOT update MONDAY to avoid flipping updated_at just because the week changed.
+    # Only update updated_at when sentiment fields changed.
     merge_sql = f"""
     MERGE `{table_id}` T
     USING `{staging_table_id}` S
@@ -148,7 +166,14 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
       T.updated_at         = CURRENT_TIMESTAMP()
     WHEN NOT MATCHED THEN
     INSERT (query, Sentiment_Score, Sentiment_Category, MONDAY, inserted_at, updated_at)
-    VALUES (S.query, S.Sentiment_Score, S.Sentiment_Category, S.MONDAY, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());
+    VALUES (
+      S.query,
+      S.Sentiment_Score,
+      S.Sentiment_Category,
+      DATE(S.MONDAY),              -- cast to DATE (staging is string)
+      CURRENT_TIMESTAMP(),
+      CURRENT_TIMESTAMP()
+    );
     """
     bq.query(merge_sql).result()
 
@@ -163,7 +188,6 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
 
 # ---------- S3 helpers ----------
 def _s3():
-    # Uses AWS creds from env or attached role
     return boto3.client("s3")
 
 
@@ -229,7 +253,6 @@ def analyze_sentiment(queries, destinations, exclusions, ctx_keywords, negative_
 
     def score(q: str) -> float:
         t = q.lower()
-        # Keep your special case
         if 'st lucia' in t and not any(kw in t for kw in negs):
             return 0.0
         if any(ex in t for ex in excl):
