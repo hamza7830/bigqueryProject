@@ -3,16 +3,6 @@
 	"github":   {
 		"enabled": false
 	},
-	"functions": {
-			"vercel/api/**/*.py": {
-			"runtime": "@vercel/python@3.9",
-			"maxDuration": 60
-			}
-		},
-
-		"env": {
-			"PYTHONDONTWRITEBYTECODE": "1"
-		},
 	"builds":   [
 		{
 		"src": "vercel/api/*/handler.py",
