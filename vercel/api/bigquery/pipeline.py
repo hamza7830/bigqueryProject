@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # ========= Runtime configuration from ENV =========
 BIGQUERY_PROJECT        = os.getenv("BIGQUERY_PROJECT", "").strip()
-OUTPUT_TABLE            = os.getenv("OUTPUT_TABLE", "test_table").strip()
+OUTPUT_TABLE            = os.getenv("OUTPUT_TABLE", "").strip()
 
 # S3 buckets
 S3_CONTEXT_BUCKET       = os.getenv("S3_CONTEXT_BUCKET", "ems-codex-standard-test").strip()
