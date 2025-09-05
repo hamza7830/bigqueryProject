@@ -1,4 +1,5 @@
-google-cloud-bigquery
-google-auth
-boto3
-vaderSentiment
+onepassword-sdk==0.3.1
+google-cloud-bigquery==3.23.1
+google-auth==2.35.0
+boto3==1.35.36
+vaderSentiment==3.3.2
