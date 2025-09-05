@@ -2,7 +2,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
 
-from pipeline import run_for_datasets
+from ..pipeline import run_for_datasets
 
 class handler(BaseHTTPRequestHandler):
     def _json(self, code, payload):
