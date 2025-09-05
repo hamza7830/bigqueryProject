@@ -67,52 +67,27 @@ def fetch_queries(bq: bigquery.Client, project: str, dataset: str):
         return []
 
 
-# ---------- schema management ----------
-REQUIRED_COLUMNS = [
-    ("query", "STRING"),
-    ("Sentiment_Score", "FLOAT"),
-    ("Sentiment_Category", "STRING"),
-    ("MONDAY", "DATE"),
-    ("inserted_at", "TIMESTAMP"),
-    ("updated_at", "TIMESTAMP"),
-]
+# ---------- schema management (robust) ----------
+CREATE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS `{table_id}` (
+  query STRING,
+  Sentiment_Score FLOAT64,
+  Sentiment_Category STRING,
+  MONDAY DATE,
+  inserted_at TIMESTAMP,
+  updated_at TIMESTAMP
+)
+"""
 
 def ensure_table_schema(bq: bigquery.Client, table_id: str):
-    """
-    Ensure table exists and has all required columns; add missing columns if needed.
-    Raises if after ALTERs the required columns still aren't present.
-    """
-    from google.cloud.exceptions import NotFound
+    # Always ensure table exists with full schema
+    logging.info(f"Ensuring table exists: {table_id}")
+    bq.query(CREATE_TABLE_SQL.format(table_id=table_id)).result()
 
-    def _columns(cur_table_id: str):
-        res = bq.query(
-            f"""
-            SELECT LOWER(column_name) AS col
-            FROM `{cur_table_id.rsplit('.', 1)[0]}.INFORMATION_SCHEMA.COLUMNS`
-            WHERE table_name = '{cur_table_id.split('.')[-1]}'
-            """
-        ).result()
-        return {row.col for row in res}
-
-    try:
-        bq.get_table(table_id)
-        existing = _columns(table_id)
-        missing = [name for name, _ in REQUIRED_COLUMNS if name.lower() not in existing]
-        for name, typ in REQUIRED_COLUMNS:
-            if name.lower() in existing:
-                continue
-            q = f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS {name} {typ}"
-            logging.info(f"ALTER: {q}")
-            bq.query(q).result()
-        # verify
-        existing2 = _columns(table_id)
-        still_missing = [name for name, _ in REQUIRED_COLUMNS if name.lower() not in existing2]
-        if still_missing:
-            raise RuntimeError(f"{table_id}: columns still missing after ALTER: {still_missing}")
-    except NotFound:
-        logging.info(f"Creating table {table_id} with full schema")
-        schema = [bigquery.SchemaField(n, t) for (n, t) in REQUIRED_COLUMNS]
-        bq.create_table(bigquery.Table(table_id, schema=schema))
+    # Blindly ensure the two audit columns exist (no-op if already present)
+    logging.info("Ensuring inserted_at/updated_at columns exist")
+    bq.query(f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMP").result()
+    bq.query(f"ALTER TABLE `{table_id}` ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP").result()
 
 
 # ---------- Upsert with inserted_at / updated_at ----------
@@ -121,7 +96,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     staging_table = f"_staging_{table}_{uuid.uuid4().hex[:8]}"
     staging_table_id = f"{project}.{dataset}.{staging_table}"
 
-    # Ensure target table exists and has the needed columns
+    # Ensure target table exists and has audit columns
     ensure_table_schema(bq, table_id)
 
     # Prepare staging payload (timestamps included for visibility; truth is set by MERGE)
