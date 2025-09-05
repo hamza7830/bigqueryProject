@@ -141,7 +141,7 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     except Exception:
         pass
 
-    logging.info(f"[{dataset}] Upserted {len(rows)} rows into {table_id}")
+    logging.info(f" Upserted {len(rows)} rows into {table_id}")
 
 # ------------- S3 helpers -------------
 def _s3():
