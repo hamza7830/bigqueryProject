@@ -1,8 +1,0 @@
-# Include root requirements
--r ../../../requirements.txt
-
-# Function-specific requirements
-anyio==4.9.0
-openpyxl==3.1.5
-pillow==11.3.0
-
