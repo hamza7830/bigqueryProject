@@ -4,17 +4,22 @@
 		"enabled": false
 	},
 	"builds":   [
-		{
-		"src": "vercel/api/*/handler.py",
-		"use": "@vercel/python",
-		"config": {
-			"includeFiles": [
-			"_app/**",
-			"_helper/**",
-			"vercel/api/biqquery/pipeline.py"
-			]
-		}
-		},
+		 {
+		      "src": "vercel/api/*/handler.py",
+		      "use": "@vercel/python",
+		      "config": {
+		        "includeFiles": [
+		          "_app/**",
+		          "_helper/**",
+		          "vercel/api/biqquery/pipeline.py"
+		        ],
+		        "excludeFiles": [
+		          "**/__pycache__/**",
+		          "**/*.pyc",
+		          "anyio/**"
+		        ]
+		      }
+		    },
 		{
 			"src": "vercel/api/*/handler.py",
 			"use": "@vercel/python",
