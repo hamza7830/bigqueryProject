@@ -1,15 +1,62 @@
 {
-  "builds": [
-    {
-      "src": "vercel/api/*/handler.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/([^/]+)/?$",
-      "dest": "/vercel/api/$1/handler.py"
-    }
-  ],
-  "version": 2
+	"crons":    [],
+	"github":   {
+		"enabled": false
+	},
+	"builds":   [
+		{
+		"src": "vercel/api/*/handler.py",
+		"use": "@vercel/python",
+		"config": {
+			"includeFiles": [
+			"_app/**",
+			"_helper/**",
+			"vercel/api/biqquery/pipeline.py"
+			]
+		}
+		},
+		{
+			"src": "vercel/api/*/handler.py",
+			"use": "@vercel/python",
+			"config": {
+				"includeFiles": ["_app/**", "_helper/**"]
+			}
+		},
+		{
+			"src": "vercel/api/generate-copy/facebook/handler.py",
+			"use": "@vercel/python",
+			"config": {
+				"includeFiles": ["_app/**", "_helper/**", "vercel/api/generate-copy/resources/templates/template_ad_copy.xlsx, vercel/api/generate-copy/resources/image/8ms.png"]
+			}
+		},
+		{
+			"src": "vercel/api/generate-copy/google/handler.py",
+			"use": "@vercel/python",
+			"config": {
+				"includeFiles": ["_app/**", "_helper/**", "vercel/api/generate-copy/resources/templates/template_ad_copy.xlsx, vercel/api/generate-copy/resources/image/8ms.png"]
+			}
+		},
+		{
+			"src": "vercel/api/generate-copy/seo/handler.py",
+			"use": "@vercel/python",
+			"config": {
+				"includeFiles": ["_app/**", "_helper/**", "vercel/api/generate-copy/resources/templates/template_seo.xlsx, vercel/api/generate-copy/resources/image/8ms.png"]
+			}
+		}
+	],
+	"routes": [
+		{
+			"src": "/api/([^/]+)/?$",
+			"dest": "/vercel/api/$1/handler.py"
+		},
+		{
+			"src": "/api/([^/]+)/([^/]+)/?$",
+			"dest": "/vercel/api/$1/$2/handler.py"
+		}
+	],
+	"public":   false,
+	"regions":  [
+		"lhr1"
+	],
+	"version":  2
 }
