@@ -3,16 +3,14 @@
 	"github":   {
 		"enabled": false
 	},
-	"env": {
-		"PYTHONDONTWRITEBYTECODE": "1"
-	},
 	"builds":   [
 		{
 		"src": "vercel/api/*/handler.py",
 		"use": "@vercel/python",
 		"config": {
-			"runtime": "python3.9",
 			"includeFiles": [
+			"_app/**",
+			"_helper/**",
 			"vercel/api/biqquery/pipeline.py"
 			]
 		}
