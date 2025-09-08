@@ -11,7 +11,8 @@
 				"includeFiles": [
 				"_app/**",
 				"_helper/**",
-				"vercel/api/bigquery/pipeline.py"
+				"vercel/api/bigquery/pipeline.py",
+				"requirements.txt"
 				]
 			}
 		},
