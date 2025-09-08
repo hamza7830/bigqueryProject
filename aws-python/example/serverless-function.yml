@@ -1,0 +1,51 @@
+Resources:
+    # ECR Repository for example image
+    ExampleImage:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: ${self:service}-${self:provider.stage}-example-ecr
+            ImageScanningConfiguration:
+                ScanOnPush: true
+            LifecyclePolicy:
+                LifecyclePolicyText: |
+                    {
+                        "rules": [
+                            {
+                                "rulePriority": 1,
+                                "description": "Keep last 5 images",
+                                "selection": {
+                                    "tagStatus": "any",
+                                    "countType": "imageCountMoreThan",
+                                    "countNumber": 5
+                                },
+                                "action": {
+                                    "type": "expire"
+                                }
+                            }
+                        ]
+                    }
+
+    # ECS Task Definition for test
+    ExampleTaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: python-example-${self:provider.stage}
+            NetworkMode: ${self:custom.baseTaskDefinition.NetworkMode}
+            RequiresCompatibilities: ${self:custom.baseTaskDefinition.RequiresCompatibilities}
+            ExecutionRoleArn: ${self:custom.baseTaskDefinition.ExecutionRoleArn}
+            TaskRoleArn: ${self:custom.baseTaskDefinition.TaskRoleArn}
+            Cpu: 256
+            Memory: 512
+            ContainerDefinitions:
+                - Name: example-container
+                  Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ExampleImage}:latest"
+                  Essential: ${self:custom.baseContainerDefinition.Essential}
+                  LogConfiguration: ${self:custom.baseContainerDefinition.LogConfiguration}
+                  Environment: ${self:custom.baseContainerDefinition.Environment}
+
+Outputs:
+    ExampleTaskDefinitionArn:
+        Description: ARN of the test task definition
+        Value: !Ref ExampleTaskDefinition
+        Export:
+            Name: ${self:service}-${self:provider.stage}-example-task-arn
