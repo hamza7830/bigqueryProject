@@ -80,9 +80,9 @@ def upsert_rows_to_bq(bq: bigquery.Client, rows: list, project: str, dataset: st
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     staged_rows = [{
+        "MONDAY": r["MONDAY"],
         "query": r["query"],
         "Sentiment_Score": r["Sentiment_Score"],
-        "MONDAY": r["MONDAY"],
         "inserted_at": now_str,
         "updated_at": now_str
     } for r in rows]
