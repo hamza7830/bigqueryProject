@@ -1,7 +1,4 @@
-# Include root requirements
--r ../../../../requirements.txt
-
-# Function-specific requirements
+# vercel/api/bigquery/requirements.txt
 google-cloud-bigquery==3.23.1
 google-auth==2.35.0
 boto3==1.35.36
