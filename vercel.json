@@ -2,22 +2,10 @@
   "version": 2,
   "public": false,
   "regions": ["lhr1"],
-
   "github": { "enabled": false },
 
   "env": {
     "PYTHONDONTWRITEBYTECODE": "1"
-  },
-  "build": {
-    "env": {
-      "PYTHONDONTWRITEBYTECODE": "1"
-    }
-  },
-
-  "functions": {
-    "vercel/api/**/handler.py": {
-      "runtime": "python3.11"
-    }
   },
 
   "builds": [
@@ -39,7 +27,10 @@
       "use": "@vercel/python",
       "config": {
         "pythonVersion": "3.11",
-        "includeFiles": ["_app/**", "_helper/**"]
+        "includeFiles": [
+          "_app/**",
+          "_helper/**"
+        ]
       }
     },
     {
@@ -84,7 +75,13 @@
   ],
 
   "routes": [
-    { "src": "/api/([^/]+)/?$", "dest": "/vercel/api/$1/handler.py" },
-    { "src": "/api/([^/]+)/([^/]+)/?$", "dest": "/vercel/api/$1/$2/handler.py" }
+    {
+      "src": "/api/([^/]+)/?$",
+      "dest": "/vercel/api/$1/handler.py"
+    },
+    {
+      "src": "/api/([^/]+)/([^/]+)/?$",
+      "dest": "/vercel/api/$1/$2/handler.py"
+    }
   ]
 }
