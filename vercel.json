@@ -1,16 +1,12 @@
 {
   "version": 2,
   "public": false,
-  "regions": ["lhr1"],
-  "github": { "enabled": false },
 
-  "builds": [
-    {
-      "src": "vercel/api/*/handler.py",
-      "use": "@vercel/python",
-      "config": { "pythonVersion": "3.11" }
+  "functions": {
+    "vercel/api/**/*.py": {
+      "runtime": "python3.11"
     }
-  ],
+  },
 
   "routes": [
     { "src": "/api/([^/]+)/?$", "dest": "/vercel/api/$1/handler.py" },
