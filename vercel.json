@@ -10,7 +10,7 @@
 	},
 	"builds":   [		
 		{
-		"src": "vercel/api/*/handler.py",
+      	"src": "vercel/api/brand-sentiment/handler.py",
 		"use": "@vercel/python",
 		"config": {
 			"pythonVersion": "3.11",
