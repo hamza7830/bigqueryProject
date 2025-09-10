@@ -4,10 +4,6 @@
   "regions": ["lhr1"],
   "github": { "enabled": false },
 
-  "env": {
-    "PYTHONDONTWRITEBYTECODE": "1"
-  },
-
   "builds": [
     {
       "src": "vercel/api/brand-sentiment/handler.py",
@@ -75,13 +71,7 @@
   ],
 
   "routes": [
-    {
-      "src": "/api/([^/]+)/?$",
-      "dest": "/vercel/api/$1/handler.py"
-    },
-    {
-      "src": "/api/([^/]+)/([^/]+)/?$",
-      "dest": "/vercel/api/$1/$2/handler.py"
-    }
+    { "src": "/api/([^/]+)/?$", "dest": "/vercel/api/$1/handler.py" },
+    { "src": "/api/([^/]+)/([^/]+)/?$", "dest": "/vercel/api/$1/$2/handler.py" }
   ]
 }
