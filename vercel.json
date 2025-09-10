@@ -4,11 +4,19 @@
 		"enabled": false
 	},
 	"builds":   [		
-		{
-      	"src": "vercel/api/*/handler.py",
-		"use": "@vercel/python",
-		"config": { "pythonVersion": "3.11" }
-		},
+		 {
+	      "src": "vercel/api/brand-sentiment/handler.py",
+	      "use": "@vercel/python",
+	      "config": {
+	        "pythonVersion": "3.11",
+	        "includeFiles": [
+	          "_app/**",
+	          "_helper/**",
+	          "vercel/api/brand-sentiment/pipeline.py",
+	          "vercel/api/brand-sentiment/requirements.txt"
+	        ]
+	      }
+	    },
 		{
 			"src": "vercel/api/*/handler.py",
 			"use": "@vercel/python",
