@@ -14,8 +14,8 @@
 				"vercel/api/bigquery/pipeline.py",
 				"vercel/api/bigquery/requirements.txt"
 				],
-				"excludeFiles": ["**/__pycache__/**", "**/*.pyc", "**/*.pyo"]
-
+	        "excludeFiles": ["**/__pycache__/**", "**/*.pyc", "**/*.pyo"],
+	        "pipFlags": ["--no-compile", "--no-cache-dir"]
 			}
 		},
 		{
