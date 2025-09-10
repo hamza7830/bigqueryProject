@@ -1,2 +1,0 @@
-# Function-specific requirements (only docker will automatically pull in the root requirements.txt)
-faker==37.4.2
