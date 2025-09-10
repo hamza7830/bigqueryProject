@@ -14,8 +14,7 @@
 				"includeFiles": [
 				"_app/**",
 				"_helper/**",
-				"vercel/api/brand-sentiment/pipeline.py",
-          		"vercel/api/brand-sentiment/requirements.txt"
+				"vercel/api/brand-sentiment/pipeline.py"
 				]
 			}
 		},
