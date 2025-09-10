@@ -3,23 +3,11 @@
 	"github":   {
 		"enabled": false
 	},
-	"build": {
-		"env": {
-		"PYTHONDONTWRITEBYTECODE": "1"
-		}
-	},
 	"builds":   [		
 		{
-      	"src": "vercel/api/brand-sentiment/handler.py",
+      	"src": "vercel/api/*/handler.py",
 		"use": "@vercel/python",
-		"config": {
-			"includeFiles": [
-			"_app/**",
-			"_helper/**",
-			"vercel/api/brand-sentiment/pipeline.py",
-			"vercel/api/brand-sentiment/requirements.txt"
-			]
-		}
+		"config": { "pythonVersion": "3.11" }
 		},
 		{
 			"src": "vercel/api/*/handler.py",
