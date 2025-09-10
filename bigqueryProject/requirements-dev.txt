@@ -1,0 +1,5 @@
+# Always include the main requirements.txt file
+-r requirements.txt
+
+# Dev only functions (as environment variables aren't initialised)
+python-dotenv==1.1.1

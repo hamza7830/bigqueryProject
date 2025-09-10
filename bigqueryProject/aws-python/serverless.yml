@@ -1,0 +1,115 @@
+org: 8millionstories
+app: ems-codex
+service: python
+
+frameworkVersion: '4'
+
+custom:
+    scheduleEnabled:
+        feature: false
+        development: false
+        staging: false
+        production: true
+
+    # Shared environment variables
+    commonEnvironment:
+        - Name: AZURE_AD_CLIENT_ID
+          Value: ${env:AZURE_AD_CLIENT_ID}
+        - Name: AZURE_AD_CLIENT_SECRET
+          Value: ${env:AZURE_AD_CLIENT_SECRET}
+        - Name: AZURE_AD_TENANT_ID
+          Value: ${env:AZURE_AD_TENANT_ID}
+        - Name: AWS_ACCESS_KEY_ID
+          Value: ${env:AWS_ACCESS_KEY_ID}
+        - Name: AWS_SECRET_ACCESS_KEY
+          Value: ${env:AWS_SECRET_ACCESS_KEY}
+        - Name: DATABASE_URL
+          Value: ${env:DATABASE_URL}
+        - Name: EMS_API_KEY
+          Value: ${env:EMS_API_KEY}
+        - Name: EMS_CALLBACK_KEY
+          Value: ${env:EMS_CALLBACK_KEY}
+        - Name: EMS_ENVIRONMENT
+          Value: ${self:provider.stage}
+        - Name: GITHUB_TOKEN
+          Value: ${env:GITHUB_TOKEN}
+        - Name: INNGEST_ENCRYPTION_KEY
+          Value: ${env:INNGEST_ENCRYPTION_KEY}
+        - Name: INNGEST_EVENT_KEY
+          Value: ${env:INNGEST_EVENT_KEY}
+        - Name: INNGEST_SIGNING_KEY
+          Value: ${env:INNGEST_SIGNING_KEY}
+        - Name: INNGEST_SIGNING_KEY_FALLBACK
+          Value: ${env:INNGEST_SIGNING_KEY_FALLBACK}
+        - Name: NEXTAUTH_SECRET
+          Value: ${env:NEXTAUTH_SECRET}
+        - Name: ONEPASSWORD_SERVICE_TOKEN
+          Value: ${env:ONEPASSWORD_SERVICE_TOKEN}
+        - Name: SENTRY_AUTH_TOKEN
+          Value: ${env:SENTRY_AUTH_TOKEN}
+        - Name: SENTRY_ENVIRONMENT
+          Value: ${self:provider.stage}
+        - Name: SENTRY_IGNORE_API_RESOLUTION_ERROR
+          Value: ${env:SENTRY_IGNORE_API_RESOLUTION_ERROR}
+        - Name: SERVERLESS_ACCESS_KEY
+          Value: ${env:SERVERLESS_ACCESS_KEY}
+        - Name: TZ
+          Value: ${env:TZ}
+        - Name: VERCEL_TOKEN
+          Value: ${env:VERCEL_TOKEN}
+        - Name: PYTHONUNBUFFERED
+          Value: "1"
+
+    # Base task definition properties
+    baseTaskDefinition:
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+            - FARGATE
+        ExecutionRoleArn: arn:aws:iam::912339477537:role/ems-codex-lambda
+        TaskRoleArn: arn:aws:iam::912339477537:role/ems-codex-lambda
+
+    # Base container definition properties
+    baseContainerDefinition:
+        Essential: true
+        LogConfiguration:
+            LogDriver: awslogs
+            Options:
+                awslogs-group: /ecs/python-tasks-${self:provider.stage}
+                awslogs-region: !Ref AWS::Region
+                awslogs-stream-prefix: ecs
+        Environment: ${self:custom.commonEnvironment}
+
+provider:
+    name: aws
+    deploymentMethod: direct
+    deploymentBucket:
+        name: ems-codex-standard
+    environment:
+        DATABASE_URL: ${env:DATABASE_URL, self:custom.dotenvVars.DATABASE_URL}
+        EMS_PLATFORM: aws
+        EMS_ENVIRONMENT: ${self:provider.stage}
+        INNGEST_ENCRYPTION_KEY: ${env:INNGEST_ENCRYPTION_KEY, self:custom.dotenvVars.INNGEST_ENCRYPTION_KEY}
+        INNGEST_EVENT_KEY: ${env:INNGEST_EVENT_KEY, self:custom.dotenvVars.INNGEST_EVENT_KEY}
+        INNGEST_SIGNING_KEY: ${env:INNGEST_SIGNING_KEY, self:custom.dotenvVars.INNGEST_SIGNING_KEY}
+        INNGEST_SIGNING_KEY_FALLBACK: ${env:INNGEST_SIGNING_KEY_FALLBACK, self:custom.dotenvVars.INNGEST_SIGNING_KEY_FALLBACK}
+        PRISMA_BINARY_TARGET: native
+        SENTRY_DSN: https://2a7cf003632547469a928e57a060a6b3@o457337.ingest.us.sentry.io/6616420
+        SENTRY_ENVIRONMENT: ${self:provider.stage}
+        TZ: UTC
+    iam:
+        role: arn:aws:iam::912339477537:role/ems-codex-lambda
+    memorySize: 1024
+    profile: ems-codex-profile
+    region: eu-west-2
+    runtime: nodejs20.x
+    stackName: python-${self:provider.stage}
+    stage: ${env:EMS_ENVIRONMENT, self:custom.dotenvVars.EMS_ENVIRONMENT}
+    timeout: 900
+
+
+resources:
+    # Initialise the Cluster and Logging shared by all functions
+    - ${file(./serverless-shared.yml)}
+
+    # Add the serverless config per-function
+    - ${file(./example/serverless-function.yml)}

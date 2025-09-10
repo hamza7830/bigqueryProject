@@ -1,0 +1,17 @@
+{
+	"name": "8ms-codex-python",
+	"license": "UNLICENSED",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"vercel:local": "vercel dev --listen 1000"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/8millionstories-organisation/8ms-codex-python.git"
+	},
+	"bugs": {
+		"url": "https://github.com/8millionstories-organisation/8ms-codex-python/issues"
+	},
+	"homepage": "https://github.com/8millionstories-organisation/8ms-codex-python#readme"
+}
